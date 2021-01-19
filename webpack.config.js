@@ -4,19 +4,75 @@ const HtmlWebpackPlugin = require('html-webpack-plugin');
 const { CleanWebpackPlugin } = require('clean-webpack-plugin');
 const MiniCssExtractPlugin = require('mini-css-extract-plugin');
 const OptimizeCssAssetsPlugin = require('optimize-css-assets-webpack-plugin');
-const webpack = require('webpack');
 
 // 设置nodejs环境变量
-// process.env.NODE_ENV= "development";
+process.env.NODE_ENV= "development";
 
 // optimize-css-asset-webpack-plugin
+
+/**
+ * HRM:hot module replacement  热模块替换/模块热替换
+ * 作用：一个模块发生变化，只会重新打包这一个模块（而不是打包所有的模块）
+ * 极大提升构建速度
+ * 
+ * 样式文件：可以使用HRM功能：因为style-loader内部实现了
+ * js文件：默认不能使用HRM功能
+ *   注意：HRM功能对js的处理，只能处理非入口js文件
+ * html文件: 默认不能使用HRM功能,同时会导致问题：html文件不能热更新了
+ *      解决：修改entry入口，将html文件引入
+ */
+
+// 复用loader
+const commonCssLoader = [
+    {
+        loader: MiniCssExtractPlugin.loader,
+        options: {
+            esModule: false,
+            publicPath: '../'
+        },
+    },
+    //将css文件变成commonjs模块加载js中，里面内容是样式字符串
+    'css-loader',
+        /**
+     * css兼容处理：postcss --> postcss-loader postcss-preset-env
+     * 帮postcss找到package.json 中的browserslist里面的配置，通过
+     * 配置加载指定的css兼容性样式
+     * "browserslist": {
+     *      //开发环境--> 设置node环境变量：process.env.NODE_ENV= development
+            "development": [
+                "last 1 chrome version",
+                "last 1 firefox version",
+                "last 1 safari version"
+            ],
+            // 生产环境：默认是看生产环境
+            "production": [
+                ">0.2%",
+                "not dead",
+                "not op_mini all"
+            ]
+        }
+        */
+    // 使用loader的默认配置
+    // 'postcss-loader'
+    // 修改loader配置
+    {
+        loader: 'postcss-loader',
+        options: {
+            postcssOptions: {
+                'postcss-preset-env': {
+                    ident: "postcss"
+                },
+            }
+        }
+    }
+]
 
 module.exports = {
     // 入口
     entry: {
         app: './src/js/index.js',
         // print: './src/js/print.js'
-    },/*  */
+    },
     output: {
         // 输入文件名
         filename: 'js/[name].js',
@@ -38,15 +94,17 @@ module.exports = {
                 }
              * airbnb --> eslint-config-airbnb-base eslint eslint-plugin-import
              */
-            // {
-            //     test: /\.js$/,
-            //     exclude: /node_modules/,
-            //     loader: 'eslint-loader',
-            //     options: {
-            //         // 自动修复eslint
-            //         fix: true
-            //     }
-            // },
+            {
+                test: /\.js$/,
+                exclude: /node_modules/,
+                // 优先执行
+                enforce: 'pre',
+                loader: 'eslint-loader',
+                options: {
+                    // 自动修复eslint
+                    fix: true
+                }
+            },
             /**
              * js兼容性处理：babel-loader @babel/core
              * 1.基本js兼容性处理 --> @babel/preset-env
@@ -92,47 +150,13 @@ module.exports = {
                     // 创建style标签，将js中的样式资源插入进行，添加到head中生效
                     //'style-loader',
                     // 这个loader取代style-loader。作用：提取js中css成单独文件
-                    MiniCssExtractPlugin.loader,
-                    //将css文件变成commonjs模块加载js中，里面内容是样式字符串
-                    'css-loader',
-                     /**
-                     * css兼容处理：postcss --> postcss-loader postcss-preset-env
-                     * 帮postcss找到package.json 中的browserslist里面的配置，通过
-                     * 配置加载指定的css兼容性样式
-                     * "browserslist": {
-                     *      //开发环境--> 设置node环境变量：process.env.NODE_ENV= development
-                            "development": [
-                                "last 1 chrome version",
-                                "last 1 firefox version",
-                                "last 1 safari version"
-                            ],
-                            // 生产环境：默认是看生产环境
-                            "production": [
-                                ">0.2%",
-                                "not dead",
-                                "not op_mini all"
-                            ]
-                        }
-                     */
-                    // 使用loader的默认配置
-                    // 'postcss-loader'
-                    // 修改loader配置
-                    {
-                        loader: 'postcss-loader',
-                        options: {
-                            postcssOptions: {
-                                'postcss-preset-env': {
-                                  ident: "postcss"
-                                },
-                            }
-                        }
-                    }
+                    ...commonCssLoader
                 ]
             },{
                 test: /\.scss$/,
                 use: [
                     'style-loader',
-                    'css-loader',
+                    ...commonCssLoader,
                     //因为sass-loader依赖于node-sass，所以还要安装node-sass
                     'sass-loader'
                 ]
@@ -184,18 +208,26 @@ module.exports = {
         new HtmlWebpackPlugin({
             //复制'./src/index.html' 文件，并自动引入打包输出的所有资源（js/css）
             template: './src/index.html',
-            title: 'Output Management'
+            title: 'Output Management',
+            minify: {
+                //移除空格
+                collapseWhitespace: process.env.NODE_ENV=='production',
+                //移除注释
+                removeComments: process.env.NODE_ENV=='production'
+            }
         }),
         new MiniCssExtractPlugin({
             // 对输出的css文件进行重命名
             filename: 'css/index.css'
         }),
         // 压缩css
-        new OptimizeCssAssetsPlugin(),
-        new webpack.HotModuleReplacementPlugin()
+        // new OptimizeCssAssetsPlugin(),
     ],
-    //模式
-    mode: 'development',
+    /** 模式
+     * development
+     * production 自动压缩js和html代码
+     */
+    mode: process.env.NODE_ENV,
     // 开发服务器 devServe: 用来自动化（自动编译，自动打开浏览器，自动刷新浏览器）
     // 特点：只会在内存中编译打包，不会有任何输出
     // 启动devServe指令为：npx webpack-dev-server
@@ -204,11 +236,11 @@ module.exports = {
         // 项目构建后的路径
         contentBase: resolve(__dirname,'dist'),
         // 启动gzip压缩
-        compress: true,
+        compress: process.env.NODE_ENV=='production',
         // 端口号
         port: 3000,
-        //自动打开浏览器
-        open: true,
+        // 开启HMR功能
+        // 当修改了webpck配置文件，需要重启动webpack服务
         hot: true
     }
 }
